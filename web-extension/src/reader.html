@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NarouEN Reader</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f0;
+      color: #1a1a1a;
+      min-height: 100vh;
+    }
+    /* ── Header ── */
+    .app-header {
+      background: #fff;
+      border-bottom: 1px solid #e0e0d8;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .app-logo {
+      width: 28px; height: 28px;
+      background: #185FA5;
+      border-radius: 6px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px; font-weight: 700; color: #fff;
+    }
+    .app-title { font-size: 15px; font-weight: 600; flex: 1; }
+    .app-meta { font-size: 12px; color: #888; }
+
+    /* ── Progress ── */
+    .prog { height: 2px; background: #e0e0d8; }
+    .prog-f { height: 100%; background: #378ADD; transition: width .4s; }
+
+    /* ── Reader area ── */
+    .reader-wrap { max-width: 720px; margin: 0 auto; padding: 24px 20px 120px; }
+
+    .sb { margin-bottom: 12px; border-radius: 12px; }
+    .en-line {
+      padding: 12px 14px;
+      border-radius: 12px;
+      line-height: 1.95;
+      font-size: 16px;
+      color: #1a1a1a;
+      background: #fff;
+      border: 1px solid #e8e8e0;
+      transition: background .2s;
+    }
+    .sb.active .en-line { background: #E6F1FB; border-color: #B5D4F4; }
+    .sb.done .en-line { opacity: .4; }
+
+    .jp-line {
+      display: none;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #FEF8ED;
+      border: 1px solid #FAC775;
+      font-size: 16px;
+      color: #412402;
+      line-height: 1.85;
+    }
+    .sb.active .jp-line { border-color: #E8A020; }
+    .jp-text { display: block; margin-bottom: 8px; }
+    .back-btn {
+      display: inline-block;
+      font-size: 11px; color: #854F0B;
+      background: #FAEEDA; border: 1px solid #FAC775;
+      border-radius: 5px; padding: 3px 9px;
+      cursor: pointer; font-weight: 600; user-select: none;
+    }
+    .dbl-hint { display: inline-block; margin-left: 8px; font-size: 11px; color: #B8860B; opacity: .7; }
+
+    /* ── Word tokens ── */
+    .w {
+      display: inline; cursor: pointer;
+      padding: 1px 2px; border-radius: 3px;
+      transition: background .1s, color .1s;
+      user-select: none;
+    }
+    .w:hover { background: #dceeff; color: #0C447C; }
+    .w.whl  { background: #378ADD; color: #fff; }
+    .w.wsel { background: #EEEDFE; color: #3C3489; }
+    .punct  { display: inline; color: #999; user-select: none; }
+
+    /* ── Hints bar ── */
+    .hints {
+      display: flex; gap: 10px; padding: 7px 20px;
+      border-top: 1px solid #e8e8e0;
+      background: #fafaf7;
+      flex-wrap: wrap;
+      max-width: 720px; margin: 0 auto;
+    }
+    .hint { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #888; }
+    .hd { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+
+    /* ── Info panel ── */
+    .info-panel {
+      border-top: 1px solid #e8e8e0;
+      overflow: hidden; max-height: 0;
+      transition: max-height .25s ease;
+      background: #fff;
+    }
+    .info-panel.open { max-height: 300px; }
+
+    .word-pane { padding: 14px 20px; background: #fafaf7; }
+    .word-pane-row { display: flex; align-items: flex-start; gap: 10px; max-width: 720px; margin: 0 auto; }
+    .word-badge {
+      font-size: 10px; padding: 2px 7px; border-radius: 4px;
+      font-weight: 600; background: #EEEDFE; color: #534AB7;
+      white-space: nowrap; flex-shrink: 0; margin-top: 3px;
+    }
+    .word-en   { font-size: 13px; color: #888; margin-bottom: 3px; }
+    .word-jp   { font-size: 22px; font-weight: 600; color: #1a1a1a; }
+    .word-note { font-size: 12px; color: #888; margin-top: 2px; }
+    .close-x   { margin-left: auto; font-size: 18px; cursor: pointer; color: #aaa; line-height: 1; flex-shrink: 0; }
+
+    .chunk-pane { padding: 12px 20px; }
+    .chunk-inner { max-width: 720px; margin: 0 auto; }
+    .chunk-hdr {
+      font-size: 11px; color: #888; margin-bottom: 10px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .chunk-row { display: flex; flex-wrap: wrap; gap: 7px; }
+    .chunk-card {
+      border: 1px solid #e0e0d8; border-radius: 9px;
+      padding: 8px 12px; background: #fff; cursor: pointer;
+      transition: border-color .12s, background .12s;
+    }
+    .chunk-card:hover { border-color: #85B7EB; background: #f0f7ff; }
+    .chunk-en { font-size: 12px; font-weight: 600; color: #185FA5; margin-bottom: 3px; white-space: nowrap; }
+    .chunk-jp { font-size: 13px; color: #1a1a1a; white-space: nowrap; }
+
+    /* ── Controls (sticky bottom) ── */
+    .ctrl-wrap {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: #fff; border-top: 1px solid #e0e0d8;
+      padding: 10px 20px;
+    }
+    .ctrl {
+      max-width: 720px; margin: 0 auto;
+      display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .mode-toggle {
+      display: flex; background: #f0f0ea;
+      border-radius: 8px; padding: 3px;
+      border: 1px solid #e0e0d8; flex-shrink: 0;
+    }
+    .mode-btn {
+      font-size: 12px; font-weight: 600;
+      padding: 5px 12px; border-radius: 6px; cursor: pointer;
+      color: #888; border: none; background: transparent;
+      transition: background .15s, color .15s; white-space: nowrap; line-height: 1.3;
+    }
+    .mode-btn.active-single { background: #E6F1FB; color: #0C447C; }
+    .mode-btn.active-cont   { background: #E1F5EE; color: #085041; }
+
+    .nav-row { display: flex; align-items: center; gap: 6px; flex: 1; justify-content: center; }
+    .cb {
+      border: 1px solid #ccc; background: transparent;
+      border-radius: 9px; padding: 7px 14px;
+      font-size: 13px; font-weight: 600;
+      color: #1a1a1a; cursor: pointer;
+      transition: background .15s; white-space: nowrap;
+    }
+    .cb:hover { background: #f0f0ea; }
+    .cb.play-single { background: #E6F1FB; color: #0C447C; border-color: #85B7EB; }
+    .cb.play-cont   { background: #E1F5EE; color: #085041; border-color: #5DCAA5; }
+    .cb.pause-btn   { background: #FAEEDA; color: #633806; border-color: #FAC775; }
+
+    .spd {
+      font-size: 12px; border: 1px solid #e0e0d8;
+      border-radius: 7px; padding: 6px 8px;
+      background: transparent; cursor: pointer; color: #1a1a1a; flex-shrink: 0;
+    }
+    .stat-badge {
+      font-size: 11px; padding: 3px 9px; border-radius: 5px;
+      font-weight: 600; white-space: nowrap; flex-shrink: 0;
+    }
+    .stat-badge.idle            { background: #f0f0ea; color: #888; }
+    .stat-badge.speaking-single { background: #E6F1FB; color: #0C447C; }
+    .stat-badge.speaking-cont   { background: #E1F5EE; color: #085041; }
+
+    @keyframes bbl { 0%,100%{transform:scaleY(.3)} 50%{transform:scaleY(1.3)} }
+    .dots { display:inline-flex; gap:3px; align-items:center; vertical-align:middle; margin-left:3px; }
+    .dot  { width:4px; height:4px; border-radius:50%; background:currentColor; animation:bbl .7s ease-in-out infinite; opacity:.8; }
+    .dot:nth-child(2){animation-delay:.14s;} .dot:nth-child(3){animation-delay:.28s;}
+
+    @media (prefers-color-scheme: dark) {
+      body { background: #1a1a1a; color: #e0e0d8; }
+      .app-header, .info-panel, .ctrl-wrap { background: #242424; border-color: #333; }
+      .en-line { background: #2a2a2a; border-color: #333; color: #e0e0d8; }
+      .sb.active .en-line { background: #1a2f44; border-color: #2a5f8a; }
+      .word-pane { background: #242424; }
+      .chunk-card { background: #2a2a2a; border-color: #333; }
+      .hints, .mode-toggle { background: #222; border-color: #333; }
+      .stat-badge.idle { background: #333; color: #888; }
+      .cb { color: #e0e0d8; border-color: #444; }
+      .cb:hover { background: #333; }
+      .word-jp { color: #e0e0d8; }
+      .chunk-jp { color: #e0e0d8; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-header">
+  <div class="app-logo">N</div>
+  <div class="app-title">NarouEN Reader</div>
+  <div class="app-meta" id="sent-counter">1 / 5</div>
+</div>
+<div class="prog"><div class="prog-f" id="prog" style="width:20%"></div></div>
+
+<div class="hints">
+  <div class="hint"><div class="hd" style="background:#378ADD"></div>再生中の単語</div>
+  <div class="hint"><div class="hd" style="background:#EEEDFE;border:1px solid #AFA9EC"></div>英単語クリック → 意味</div>
+  <div class="hint"><div class="hd" style="background:#FEF8ED;border:1px solid #FAC775"></div>英文ダブルクリック / 長押し → 和訳</div>
+  <div class="hint"><div class="hd" style="background:#E1F5EE;border:1px solid #5DCAA5"></div>和文ダブルクリック → 文節対訳</div>
+</div>
+
+<div class="reader-wrap" id="ta"></div>
+
+<div class="info-panel" id="info-panel">
+  <div class="word-pane" id="word-pane" style="display:none">
+    <div class="word-pane-row">
+      <span class="word-badge">単語</span>
+      <div style="flex:1">
+        <div class="word-en" id="wp-en"></div>
+        <div class="word-jp" id="wp-jp"></div>
+        <div class="word-note" id="wp-note"></div>
+      </div>
+      <span class="close-x" onclick="closePanel()">×</span>
+    </div>
+  </div>
+  <div class="chunk-pane" id="chunk-pane" style="display:none">
+    <div class="chunk-inner">
+      <div class="chunk-hdr"><span id="chunk-label"></span><span class="close-x" onclick="closePanel()">×</span></div>
+      <div class="chunk-row" id="chunk-row"></div>
+    </div>
+  </div>
+</div>
+
+<div class="ctrl-wrap">
+  <div class="ctrl">
+    <div class="mode-toggle">
+      <button class="mode-btn active-single" id="mode-single" onclick="setMode('single')">1文のみ</button>
+      <button class="mode-btn" id="mode-cont" onclick="setMode('cont')">連続</button>
+    </div>
+    <div class="nav-row">
+      <button class="cb" onclick="prevSent()">◀</button>
+      <button class="cb play-single" id="btn-play" onclick="togglePlay()">▶ 1文</button>
+      <button class="cb" onclick="nextSent()">▶</button>
+    </div>
+    <span class="stat-badge idle" id="stat-badge">文 1</span>
+    <select class="spd" id="spd-sel" onchange="onSpeedChange()">
+      <option value="0.75">0.75×</option>
+      <option value="1.0" selected>1.0×</option>
+      <option value="1.25">1.25×</option>
+      <option value="1.5">1.5×</option>
+    </select>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script src="dict.js"></script>
+<script src="reader.js"></script>
+</body>
+</html>
