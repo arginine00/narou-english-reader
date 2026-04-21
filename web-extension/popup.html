@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <title>NarouEN Settings</title>
   <style>
-    body { width: 280px; padding: 16px; font-family: -apple-system, sans-serif; font-size: 14px; }
+    body { width: 300px; padding: 16px; font-family: -apple-system, sans-serif; font-size: 14px; }
     h1   { font-size: 15px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
     .logo { width: 22px; height: 22px; background: #185FA5; border-radius: 5px; color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
     label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
     input[type="text"], input[type="password"], select {
       width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 7px;
-      font-size: 13px; margin-bottom: 12px; outline: none;
+      font-size: 13px; margin-bottom: 12px; outline: none; box-sizing: border-box;
     }
-    input:focus { border-color: #378ADD; }
+    input:focus, select:focus { border-color: #378ADD; }
     button {
       width: 100%; padding: 8px; background: #185FA5; color: #fff;
       border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
@@ -21,13 +21,66 @@
     .saved { font-size: 12px; color: #1D9E75; text-align: center; margin-top: 8px; display: none; }
     .sep { border-top: 1px solid #eee; margin: 14px 0; }
     .about { font-size: 11px; color: #aaa; text-align: center; }
+    .about a { color: #888; }
+
+    .engine-section { display: none; }
+
+    .engine-badge {
+      display: inline-block; font-size: 10px; font-weight: 600;
+      padding: 2px 7px; border-radius: 4px; margin-bottom: 8px;
+    }
+    .engine-badge.deepl   { background: #0F2B46; color: #00C2A8; }
+    .engine-badge.gemini  { background: #E8F0FE; color: #1A73E8; }
+    .engine-badge.chatgpt { background: #EAF7EE; color: #10A37F; }
+    .engine-badge.claude  { background: #FAF0E6; color: #CC785C; }
+
+    .model-note { font-size: 11px; color: #aaa; margin: -8px 0 10px; }
   </style>
 </head>
 <body>
   <h1><span class="logo">N</span> NarouEN Settings</h1>
 
-  <label>DeepL API キー</label>
-  <input type="password" id="api-key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+  <label>翻訳エンジン</label>
+  <select id="engine">
+    <option value="deepl">DeepL (推奨)</option>
+    <option value="gemini">Gemini</option>
+    <option value="chatgpt">ChatGPT (OpenAI)</option>
+    <option value="claude">Claude (Anthropic)</option>
+  </select>
+
+  <!-- DeepL -->
+  <div class="engine-section" id="sec-deepl" style="display:block">
+    <span class="engine-badge deepl">DeepL Free</span>
+    <label>DeepL API キー</label>
+    <input type="password" id="deepl-key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+    <div class="model-note">無料枠: 500,000 字/月</div>
+  </div>
+
+  <!-- Gemini -->
+  <div class="engine-section" id="sec-gemini">
+    <span class="engine-badge gemini">Gemini 2.5 Flash</span>
+    <label>Gemini API キー</label>
+    <input type="password" id="gemini-key" placeholder="AIzaSy..." />
+    <div class="model-note">モデル: gemini-2.5-flash</div>
+  </div>
+
+  <!-- ChatGPT -->
+  <div class="engine-section" id="sec-chatgpt">
+    <span class="engine-badge chatgpt">GPT-4o mini</span>
+    <label>OpenAI API キー</label>
+    <input type="password" id="openai-key" placeholder="sk-..." />
+    <div class="model-note">モデル: gpt-4o-mini</div>
+  </div>
+
+  <!-- Claude -->
+  <div class="engine-section" id="sec-claude">
+    <span class="engine-badge claude">Claude Sonnet</span>
+    <label>Anthropic API キー</label>
+    <input type="password" id="claude-key" placeholder="sk-ant-..." />
+    <div class="model-note">モデル: claude-sonnet-4-20250514</div>
+  </div>
+
+  <div class="sep"></div>
 
   <label>読み上げ速度（デフォルト）</label>
   <select id="default-speed">
@@ -44,32 +97,21 @@
     <option value="en-AU">English (AU)</option>
   </select>
 
-  <button onclick="save()">保存</button>
+  <div style="display:flex; gap:8px;">
+    <button id="test-btn" style="background:#1D9E75;">キーのテスト</button>
+    <button id="save-btn" style="flex:1;">保存</button>
+  </div>
+  <div id="test-msg" style="font-size:11px; margin-top:10px; display:none; padding:8px; border-radius:6px; word-break:break-all;"></div>
   <div class="saved" id="saved-msg">保存しました ✓</div>
 
   <div class="sep"></div>
   <div class="about">
-    <a href="https://www.deepl.com/pro-api" target="_blank">DeepL API キーを取得する →</a>
+    <a href="https://www.deepl.com/pro-api" target="_blank">DeepL</a> ·
+    <a href="https://aistudio.google.com/apikey" target="_blank">Gemini</a> ·
+    <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI</a> ·
+    <a href="https://console.anthropic.com/settings/keys" target="_blank">Anthropic</a>
   </div>
 
-  <script>
-    chrome.storage.local.get(['deeplApiKey','defaultSpeed','ttsLang'], data => {
-      if (data.deeplApiKey)   document.getElementById('api-key').value        = data.deeplApiKey;
-      if (data.defaultSpeed)  document.getElementById('default-speed').value  = data.defaultSpeed;
-      if (data.ttsLang)       document.getElementById('tts-lang').value        = data.ttsLang;
-    });
-
-    function save() {
-      chrome.storage.local.set({
-        deeplApiKey:  document.getElementById('api-key').value.trim(),
-        defaultSpeed: document.getElementById('default-speed').value,
-        ttsLang:      document.getElementById('tts-lang').value,
-      }, () => {
-        const msg = document.getElementById('saved-msg');
-        msg.style.display = 'block';
-        setTimeout(() => { msg.style.display = 'none'; }, 1800);
-      });
-    }
-  </script>
+  <script src="popup.js"></script>
 </body>
 </html>

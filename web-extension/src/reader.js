@@ -25,10 +25,17 @@
 let curSent   = 0;
 let isPlaying = false;
 let speed     = 1.0;
+let ttsLang   = 'en-US';
 let mode      = 'single'; // 'single' | 'cont'
 
-const replaced = new Array(S.length).fill(false);
-const synth    = window.speechSynthesis;
+// チャプター/ブックマーク用メタデータ
+let metaPrevUrl = '';
+let metaNextUrl = '';
+let metaNcode   = '';
+let metaEpisode = '';
+
+let replaced = new Array(S.length).fill(false);
+const synth  = window.speechSynthesis;
 
 const DBLMS  = 260;  // ダブルクリック判定ウィンドウ (ms)
 const LONGMS = 500;  // 長押し判定時間 (ms)
@@ -46,6 +53,46 @@ function buildWordMap(txt) {
     map.push({ s: m.index, e: m.index + m[0].length, w: m[0] });
   }
   return map;
+}
+
+/**
+ * content.js から受け取った { jp, en } 配列を
+ * reader.js が必要とする S 形式に変換する。
+ *
+ * 自動トークナイズ: 英文を単語・句読点に分割し、
+ * 簡易チャンク（文節対訳）を生成する。
+ */
+function parseParagraphs(paragraphs) {
+  return paragraphs.map(p => {
+    const en = p.en;
+    const jp = p.jp;
+
+    // トークナイズ: 単語と句読点を分離
+    const rawTokens = en.match(/[a-zA-Z']+|[.,!?;:\-—]+/g) || [];
+    const tokens = rawTokens;
+
+    // TTS 用テキスト（ダッシュをスペースに）
+    const tts = en.replace(/—/g, ', ');
+
+    // 簡易チャンク: 英文全体 ↔ 日本語全体の 1:1 対応
+    const chunks = [{ en: en, jp: jp }];
+
+    // ci: 全トークンをチャンク 0 に割当（句読点は -1）
+    const ci = tokens.map(tok => /^[.,!?;:\-—]+$/.test(tok) ? -1 : 0);
+
+    return { tts, jp, tokens, ci, chunks };
+  });
+}
+
+/**
+ * iframe の高さを親ウィンドウに通知する。
+ * content.js 側の RESIZE リスナーが受け取って iframe を調整する。
+ */
+function notifyResize() {
+  if (window.parent !== window) {
+    const h = document.documentElement.scrollHeight;
+    window.parent.postMessage({ type: 'RESIZE', height: h }, '*');
+  }
 }
 
 function clearHL() {
@@ -122,6 +169,9 @@ function renderAll() {
   });
 
   updateUI();
+
+  // iframe 高さを親に通知 (無効化)
+  // requestAnimationFrame(() => notifyResize());
 }
 
 /* ─── イベント: 英文 ─── */
@@ -215,17 +265,80 @@ function showWordPanel(key, sp) {
   document.querySelectorAll('.w.wsel').forEach(el => el.classList.remove('wsel'));
   if (sp) sp.classList.add('wsel');
 
-  const info = DICT[key] || { jp: '（辞書にない単語）', note: '' };
-  document.getElementById('wp-en').textContent   = key;
-  document.getElementById('wp-jp').textContent   = info.jp;
-  document.getElementById('wp-note').textContent = info.note;
+  const wpEn   = document.getElementById('wp-en');
+  const wpJp   = document.getElementById('wp-jp');
+  const wpNote = document.getElementById('wp-note');
+
+  wpEn.textContent = key;
   document.getElementById('word-pane').style.display  = 'block';
   document.getElementById('chunk-pane').style.display = 'none';
   document.getElementById('info-panel').classList.add('open');
+
+  // 1. ローカル辞書を優先チェック
+  if (DICT[key]) {
+    wpJp.textContent   = DICT[key].jp;
+    wpNote.textContent = DICT[key].note;
+    return;
+  }
+
+  // 2. Chrome 拡張モード: background.js 経由で辞書 API を呼ぶ
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+    wpJp.textContent   = '検索中…';
+    wpNote.textContent = '';
+    chrome.runtime.sendMessage({ type: 'LOOKUP_WORD', word: key }, res => {
+      if (res && res.ok && res.result) {
+        const r = res.result;
+        wpJp.textContent   = r.definition;
+        wpNote.textContent = r.partOfSpeech + (r.phonetic ? '  ' + r.phonetic : '');
+      } else {
+        wpJp.textContent   = '（辞書にない単語）';
+        wpNote.textContent = '';
+      }
+    });
+    return;
+  }
+
+  // 3. スタンドアロンモード: ローカル辞書のみ
+  wpJp.textContent   = '（辞書にない単語）';
+  wpNote.textContent = '';
 }
 
 function showChunkPanel(si) {
-  document.getElementById('chunk-label').textContent = '文 ' + (si + 1) + ' の文節対訳';
+  const row = document.getElementById('chunk-row');
+  const label = document.getElementById('chunk-label');
+  label.textContent = '文 ' + (si + 1) + ' の文節対訳を取得中...';
+  row.innerHTML = '';
+  
+  document.getElementById('word-pane').style.display  = 'none';
+  document.getElementById('chunk-pane').style.display = 'block';
+  document.getElementById('info-panel').classList.add('open');
+
+  // もし既にチャンク分解されていれば(最初は1要素の塊)、再取得しない
+  if (S[si].chunks.length > 1) {
+    label.textContent = '文 ' + (si + 1) + ' の文節対訳';
+    renderChunks(si);
+    return;
+  }
+
+  // 1繋がりの英文を取得して分割翻訳リクエスト
+  const enText = S[si].chunks[0].en;
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+    chrome.runtime.sendMessage({ type: 'TRANSLATE_CHUNKS', en: enText }, res => {
+      if (res && res.ok && res.result) {
+        S[si].chunks = res.result; // キャッシュする
+      } else {
+        S[si].chunks = [{ en: enText, jp: '(文節翻訳の取得に失敗しました)' }];
+      }
+      label.textContent = '文 ' + (si + 1) + ' の文節対訳';
+      renderChunks(si);
+    });
+  } else {
+    label.textContent = '文 ' + (si + 1) + ' の文節対訳';
+    renderChunks(si);
+  }
+}
+
+function renderChunks(si) {
   const row = document.getElementById('chunk-row');
   row.innerHTML = '';
   S[si].chunks.forEach(c => {
@@ -236,9 +349,6 @@ function showChunkPanel(si) {
     card.appendChild(e); card.appendChild(j);
     row.appendChild(card);
   });
-  document.getElementById('word-pane').style.display  = 'none';
-  document.getElementById('chunk-pane').style.display = 'block';
-  document.getElementById('info-panel').classList.add('open');
 }
 
 function closePanel() {
@@ -273,7 +383,7 @@ function speakCurrent() {
   synth.cancel();
 
   const utt    = new SpeechSynthesisUtterance(S[curSent].tts);
-  utt.lang     = 'en-US';
+  utt.lang     = ttsLang;
   utt.rate     = speed;
   utt.onboundary = e => { if (e.name === 'word') highlightByChar(e.charIndex); };
   utt.onend = () => {
@@ -362,21 +472,146 @@ function setPlayBtn(playing) {
 }
 
 function updateUI() {
-  document.getElementById('prog').style.width =
-    ((curSent + 1) / S.length * 100) + '%';
-  document.getElementById('sent-counter').textContent =
-    (curSent + 1) + ' / ' + S.length;
+  const prog = document.getElementById('prog');
+  if (prog && S.length > 0) prog.style.width = ((curSent + 1) / S.length * 100) + '%';
+
+  const sentCounter = document.getElementById('sent-counter');
+  if (sentCounter) {
+    sentCounter.textContent = (curSent + 1) + ' / ' + S.length;
+  }
 
   const badge = document.getElementById('stat-badge');
-  if (isPlaying) {
-    badge.className = 'stat-badge ' + (mode === 'single' ? 'speaking-single' : 'speaking-cont');
-    badge.innerHTML = (mode === 'single' ? '再生中' : '連続再生中') +
-      ' <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
-  } else {
-    badge.className   = 'stat-badge idle';
-    badge.textContent = '文 ' + (curSent + 1);
+  if (badge) {
+    if (isPlaying) {
+      badge.className = 'stat-badge ' + (mode === 'single' ? 'speaking-single' : 'speaking-cont');
+      badge.innerHTML = (mode === 'single' ? '再生中' : '連続再生中') +
+        ' <span class="dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></span>';
+    } else {
+      badge.className   = 'stat-badge idle';
+      badge.textContent = '文 ' + (curSent + 1);
+    }
+  }
+
+  // スクロール追従（画面中央に表示）
+  const activeSb = document.getElementById('sb-' + curSent);
+  if (activeSb) {
+    activeSb.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }
 }
 
 /* ─── 初期化 ─── */
-renderAll();
+
+/**
+ * postMessage で翻訳データを受信したら S を差し替えて再描画する。
+ * content.js が iframe の load 後に INIT_DATA を送信する。
+ * 追加データ: prevUrl, nextUrl, novelTitle, ncode, episode, settings, bookmark
+ */
+window.addEventListener('message', e => {
+  if (e.data && e.data.type === 'INIT_DATA' && Array.isArray(e.data.paragraphs)) {
+    // content.js から受け取ったデータで S を再構築
+    S = parseParagraphs(e.data.paragraphs);
+    curSent  = 0;
+    replaced = new Array(S.length).fill(false);
+
+    // ── 設定の適用 ──
+    if (e.data.settings) {
+      if (e.data.settings.speed) {
+        speed = parseFloat(e.data.settings.speed);
+        const sel = document.getElementById('spd-sel');
+        if (sel) sel.value = e.data.settings.speed;
+      }
+      if (e.data.settings.ttsLang) {
+        ttsLang = e.data.settings.ttsLang;
+      }
+    }
+
+    // ── チャプターナビゲーション ──
+    metaPrevUrl = e.data.prevUrl || '';
+    metaNextUrl = e.data.nextUrl || '';
+    metaNcode   = e.data.ncode   || '';
+    metaEpisode = e.data.episode || '';
+
+    const chapNav = document.getElementById('chapter-nav');
+    if (metaPrevUrl || metaNextUrl) {
+      chapNav.classList.add('visible');
+      document.getElementById('chap-prev').disabled = !metaPrevUrl;
+      document.getElementById('chap-next').disabled = !metaNextUrl;
+      document.getElementById('chap-title').textContent = e.data.novelTitle || '';
+    }
+
+    // ── ブックマークボタン表示 ──
+    if (metaNcode && metaEpisode) {
+      document.getElementById('bm-btn').classList.add('visible');
+    }
+
+    // ── ブックマーク復元 ──
+    if (e.data.bookmark && typeof e.data.bookmark.sentIndex === 'number') {
+      curSent = Math.min(e.data.bookmark.sentIndex, S.length - 1);
+    }
+
+    renderAll();
+  }
+});
+
+/* ─── チャプターナビ ─── */
+
+function goPrevChapter() {
+  if (metaPrevUrl && window.parent !== window) {
+    window.parent.postMessage({ type: 'NAVIGATE', url: metaPrevUrl }, '*');
+  }
+}
+
+function goNextChapter() {
+  if (metaNextUrl && window.parent !== window) {
+    window.parent.postMessage({ type: 'NAVIGATE', url: metaNextUrl }, '*');
+  }
+}
+
+/* ─── ブックマーク ─── */
+
+function saveBookmark() {
+  if (window.parent !== window) {
+    window.parent.postMessage({
+      type: 'BOOKMARK_SAVE',
+      sentIndex: curSent,
+    }, '*');
+    // UI フィードバック
+    const btn = document.getElementById('bm-btn');
+    btn.classList.add('saved');
+    btn.textContent = '🔖 保存済み';
+    setTimeout(() => {
+      btn.classList.remove('saved');
+      btn.textContent = '🔖 しおり';
+    }, 2000);
+  }
+}
+
+// スタンドアロン（reader.html を直接開いた場合）: デモデータで即描画
+if (typeof S !== 'undefined' && S.length > 0) {
+  renderAll();
+}
+
+// ==========================================
+// イベントリスナー登録 (Manifest V3 CSP 対応)
+// ==========================================
+
+document.addEventListener('DOMContentLoaded', () => {
+  // ナビゲーション
+  document.getElementById('chap-prev')?.addEventListener('click', goPrevChapter);
+  document.getElementById('chap-next')?.addEventListener('click', goNextChapter);
+
+  // パネル閉じるボタン
+  document.getElementById('close-word-pane')?.addEventListener('click', closePanel);
+  document.getElementById('close-chunk-pane')?.addEventListener('click', closePanel);
+
+  // コントローラー
+  document.getElementById('mode-single')?.addEventListener('click', () => setMode('single'));
+  document.getElementById('mode-cont')?.addEventListener('click', () => setMode('cont'));
+  
+  document.getElementById('btn-prev')?.addEventListener('click', prevSent);
+  document.getElementById('btn-play')?.addEventListener('click', togglePlay);
+  document.getElementById('btn-next')?.addEventListener('click', nextSent);
+
+  document.getElementById('spd-sel')?.addEventListener('change', onSpeedChange);
+  document.getElementById('bm-btn')?.addEventListener('click', saveBookmark);
+});

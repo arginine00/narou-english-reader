@@ -99,14 +99,21 @@
     .hint { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #888; }
     .hd { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 
+    /* ── Bottom Fixed Area ── */
+    .bottom-fixed-area {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: rgba(255, 255, 255, 0.98);
+      backdrop-filter: blur(8px);
+      z-index: 100;
+      box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.04);
+    }
+
     /* ── Info panel ── */
     .info-panel {
-      border-top: 1px solid #e8e8e0;
       overflow: hidden; max-height: 0;
       transition: max-height .25s ease;
-      background: #fff;
     }
-    .info-panel.open { max-height: 300px; }
+    .info-panel.open { max-height: 300px; border-top: 1px solid #e8e8e0; }
 
     .word-pane { padding: 14px 20px; background: #fafaf7; }
     .word-pane-row { display: flex; align-items: flex-start; gap: 10px; max-width: 720px; margin: 0 auto; }
@@ -138,9 +145,8 @@
 
     /* ── Controls (sticky bottom) ── */
     .ctrl-wrap {
-      position: fixed; bottom: 0; left: 0; right: 0;
-      background: #fff; border-top: 1px solid #e0e0d8;
       padding: 10px 20px;
+      border-top: 1px solid #e0e0d8;
     }
     .ctrl {
       max-width: 720px; margin: 0 auto;
@@ -191,6 +197,48 @@
     .dot  { width:4px; height:4px; border-radius:50%; background:currentColor; animation:bbl .7s ease-in-out infinite; opacity:.8; }
     .dot:nth-child(2){animation-delay:.14s;} .dot:nth-child(3){animation-delay:.28s;}
 
+    /* ── Chapter nav ── */
+    .chapter-nav {
+      display: none; /* hidden until data received */
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 20px;
+      background: #fafaf7;
+      border-bottom: 1px solid #e8e8e0;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .chapter-nav.visible { display: flex; }
+    .chap-btn {
+      font-size: 12px; font-weight: 600;
+      color: #185FA5; background: transparent;
+      border: 1px solid #B5D4F4; border-radius: 7px;
+      padding: 5px 12px; cursor: pointer;
+      transition: background .15s;
+      white-space: nowrap;
+    }
+    .chap-btn:hover { background: #E6F1FB; }
+    .chap-btn:disabled { opacity: .3; cursor: default; }
+    .chap-title {
+      font-size: 12px; color: #888;
+      text-align: center; flex: 1;
+      overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; padding: 0 10px;
+    }
+
+    /* ── Bookmark ── */
+    .bm-btn {
+      font-size: 12px; font-weight: 600;
+      border: 1px solid #e0e0d8; border-radius: 7px;
+      padding: 5px 10px; cursor: pointer;
+      background: transparent; color: #888;
+      transition: background .15s, color .15s;
+      white-space: nowrap; flex-shrink: 0;
+      display: none; /* hidden until extension mode */
+    }
+    .bm-btn.visible { display: inline-block; }
+    .bm-btn.saved { background: #FEF8ED; color: #854F0B; border-color: #FAC775; }
+
     @media (prefers-color-scheme: dark) {
       body { background: #1a1a1a; color: #e0e0d8; }
       .app-header, .info-panel, .ctrl-wrap { background: #242424; border-color: #333; }
@@ -216,6 +264,12 @@
 </div>
 <div class="prog"><div class="prog-f" id="prog" style="width:20%"></div></div>
 
+<div class="chapter-nav" id="chapter-nav">
+  <button class="chap-btn" id="chap-prev" disabled>◁ 前話</button>
+  <span class="chap-title" id="chap-title"></span>
+  <button class="chap-btn" id="chap-next" disabled>次話 ▷</button>
+</div>
+
 <div class="hints">
   <div class="hint"><div class="hd" style="background:#378ADD"></div>再生中の単語</div>
   <div class="hint"><div class="hd" style="background:#EEEDFE;border:1px solid #AFA9EC"></div>英単語クリック → 意味</div>
@@ -225,44 +279,47 @@
 
 <div class="reader-wrap" id="ta"></div>
 
-<div class="info-panel" id="info-panel">
-  <div class="word-pane" id="word-pane" style="display:none">
-    <div class="word-pane-row">
-      <span class="word-badge">単語</span>
-      <div style="flex:1">
-        <div class="word-en" id="wp-en"></div>
-        <div class="word-jp" id="wp-jp"></div>
-        <div class="word-note" id="wp-note"></div>
+<div class="bottom-fixed-area">
+  <div class="info-panel" id="info-panel">
+    <div class="word-pane" id="word-pane" style="display:none">
+      <div class="word-pane-row">
+        <span class="word-badge">単語</span>
+        <div style="flex:1">
+          <div class="word-en" id="wp-en"></div>
+          <div class="word-jp" id="wp-jp"></div>
+          <div class="word-note" id="wp-note"></div>
+        </div>
+        <span class="close-x" id="close-word-pane">×</span>
       </div>
-      <span class="close-x" onclick="closePanel()">×</span>
+    </div>
+    <div class="chunk-pane" id="chunk-pane" style="display:none">
+      <div class="chunk-inner">
+        <div class="chunk-hdr"><span id="chunk-label"></span><span class="close-x" id="close-chunk-pane">×</span></div>
+        <div class="chunk-row" id="chunk-row"></div>
+      </div>
     </div>
   </div>
-  <div class="chunk-pane" id="chunk-pane" style="display:none">
-    <div class="chunk-inner">
-      <div class="chunk-hdr"><span id="chunk-label"></span><span class="close-x" onclick="closePanel()">×</span></div>
-      <div class="chunk-row" id="chunk-row"></div>
-    </div>
-  </div>
-</div>
 
-<div class="ctrl-wrap">
-  <div class="ctrl">
-    <div class="mode-toggle">
-      <button class="mode-btn active-single" id="mode-single" onclick="setMode('single')">1文のみ</button>
-      <button class="mode-btn" id="mode-cont" onclick="setMode('cont')">連続</button>
+  <div class="ctrl-wrap">
+    <div class="ctrl">
+      <div class="mode-toggle">
+        <button class="mode-btn active-single" id="mode-single">1文のみ</button>
+        <button class="mode-btn" id="mode-cont">連続</button>
+      </div>
+      <div class="nav-row">
+        <button class="cb" id="btn-prev">◀</button>
+        <button class="cb play-single" id="btn-play">▶ 1文</button>
+        <button class="cb" id="btn-next">▶</button>
+      </div>
+      <span class="stat-badge idle" id="stat-badge">文 1</span>
+      <select class="spd" id="spd-sel">
+        <option value="0.75">0.75×</option>
+        <option value="1.0" selected>1.0×</option>
+        <option value="1.25">1.25×</option>
+        <option value="1.5">1.5×</option>
+      </select>
+      <button class="bm-btn" id="bm-btn">🔖 しおり</button>
     </div>
-    <div class="nav-row">
-      <button class="cb" onclick="prevSent()">◀</button>
-      <button class="cb play-single" id="btn-play" onclick="togglePlay()">▶ 1文</button>
-      <button class="cb" onclick="nextSent()">▶</button>
-    </div>
-    <span class="stat-badge idle" id="stat-badge">文 1</span>
-    <select class="spd" id="spd-sel" onchange="onSpeedChange()">
-      <option value="0.75">0.75×</option>
-      <option value="1.0" selected>1.0×</option>
-      <option value="1.25">1.25×</option>
-      <option value="1.5">1.5×</option>
-    </select>
   </div>
 </div>
 

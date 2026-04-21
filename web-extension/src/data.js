@@ -10,7 +10,7 @@
  *   ci      : 各トークンが属するチャンク番号（-1 = 句読点、無視）
  *   chunks  : 文節対訳リスト { en, jp }
  */
-const S = [
+let S = [
   {
     tts: "Kazuto opened his eyes slowly, greeted by the pale morning light filtering through the curtains.",
     jp: "カズトはゆっくりと目を開けた。淡い朝の光がカーテン越しに差し込んでいた。",

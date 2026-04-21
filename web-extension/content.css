@@ -1,0 +1,90 @@
+/**
+ * content.css
+ * なろうページに注入されるスタイル。
+ * リーダーパネルの外枠と iframe のみスタイリングする。
+ * なろう既存の CSS を上書きしないよう #narouEN-* で名前空間を限定する。
+ */
+
+/* ── リーダーパネル外枠 ── */
+#narouEN-reader {
+  margin: 28px 0 !important;
+  border: 1px solid #d0d0c8 !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  background: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue',
+               Arial, sans-serif !important;
+  resize: vertical !important;
+}
+
+/* ── iframe（高さを固定しスクロール可能に） ── */
+#narouEN-reader iframe {
+  width: 100% !important;
+  border: none !important;
+  display: block !important;
+  height: 500px !important;
+}
+
+/* ── ローディング表示（iframe 読み込み前） ── */
+#narouEN-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  font-size: 14px;
+  color: #888;
+}
+
+#narouEN-loading .narouEN-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #e0e0d8;
+  border-top-color: #378ADD;
+  border-radius: 50%;
+  animation: narouEN-spin 0.7s linear infinite;
+}
+
+@keyframes narouEN-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── エラー表示 ── */
+#narouEN-error {
+  display: none;
+  padding: 16px 20px;
+  background: #fff5f5;
+  border-top: 1px solid #fcc;
+  font-size: 13px;
+  color: #c0392b;
+}
+
+#narouEN-error a {
+  color: #185FA5;
+  text-decoration: underline;
+}
+
+/* ── ダークモード対応 ── */
+@media (prefers-color-scheme: dark) {
+  #narouEN-reader {
+    background: #1e1e1e !important;
+    border-color: #333 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  }
+
+  #narouEN-loading {
+    color: #666;
+  }
+
+  #narouEN-loading .narouEN-spinner {
+    border-color: #333;
+    border-top-color: #378ADD;
+  }
+
+  #narouEN-error {
+    background: #2a1a1a;
+    border-color: #5a2020;
+    color: #e07070;
+  }
+}
