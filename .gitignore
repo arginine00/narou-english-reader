@@ -1,0 +1,24 @@
+# API keys / secrets
+local.properties
+*.env
+.env.local
+
+# Android
+android-app/.gradle/
+android-app/build/
+android-app/local.properties
+*.apk
+*.aab
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
+
+# Node (if tooling added later)
+node_modules/
+dist/
+
+# Chrome extension build artifacts
+web-extension/dist/

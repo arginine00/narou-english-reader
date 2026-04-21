@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "NarouEN Reader",
+  "version": "1.0.0",
+  "description": "小説家になろうの小説をリアルタイム英訳・音声読み上げするChrome拡張",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://ncode.syosetu.com/*",
+    "https://syosetu.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16":  "icons/icon16.png",
+      "48":  "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://ncode.syosetu.com/*",
+        "https://syosetu.com/*"
+      ],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["src/reader.html"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
