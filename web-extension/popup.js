@@ -21,10 +21,46 @@ document.addEventListener('DOMContentLoaded', () => {
     if (data.openaiApiKey)      document.getElementById('openai-key').value  = data.openaiApiKey;
     if (data.claudeApiKey)      document.getElementById('claude-key').value  = data.claudeApiKey;
     if (data.defaultSpeed)      document.getElementById('default-speed').value = data.defaultSpeed;
-    if (data.ttsLang)           document.getElementById('tts-lang').value     = data.ttsLang;
+    
+    populateVoices(data.ttsVoice);
     onEngineChange();
   });
+
+  if (speechSynthesis.onvoiceschanged !== undefined) {
+    speechSynthesis.onvoiceschanged = () => populateVoices();
+  }
 });
+
+function populateVoices(savedVoiceUri = null) {
+  const sel = document.getElementById('tts-voice');
+  if (!sel) return;
+
+  const voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
+  if (voices.length === 0) return;
+
+  voices.sort((a, b) => {
+    const aGood = a.name.includes('Natural') || a.name.includes('Google') || a.name.includes('Online');
+    const bGood = b.name.includes('Natural') || b.name.includes('Google') || b.name.includes('Online');
+    if (aGood && !bGood) return -1;
+    if (!aGood && bGood) return 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const currentVal = savedVoiceUri || sel.value;
+  sel.innerHTML = '<option value="default">ブラウザ標準の音声</option>';
+  
+  voices.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.voiceURI;
+    const isGood = v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Online');
+    opt.textContent = (isGood ? '★ ' : '') + `${v.name} (${v.lang})`;
+    sel.appendChild(opt);
+  });
+
+  if (currentVal && Array.from(sel.options).some(o => o.value === currentVal)) {
+    sel.value = currentVal;
+  }
+}
 
 function onEngineChange() {
   const engine = document.getElementById('engine').value;
@@ -43,7 +79,7 @@ function save() {
     openaiApiKey:      document.getElementById('openai-key').value.trim(),
     claudeApiKey:      document.getElementById('claude-key').value.trim(),
     defaultSpeed:      document.getElementById('default-speed').value,
-    ttsLang:           document.getElementById('tts-lang').value,
+    ttsVoice:          document.getElementById('tts-voice').value,
   }, () => {
     const msg = document.getElementById('saved-msg');
     msg.style.display = 'block';

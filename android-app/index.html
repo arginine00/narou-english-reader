@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>NarouEN Settings</title>
+  <style>
+    body { width: 100%; max-width: 400px; margin: 0 auto; padding: 24px; font-family: -apple-system, sans-serif; font-size: 14px; box-sizing: border-box; }
+    h1   { font-size: 15px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    .logo { width: 22px; height: 22px; background: #185FA5; border-radius: 5px; color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+    input[type="text"], input[type="password"], select {
+      width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 7px;
+      font-size: 13px; margin-bottom: 12px; outline: none; box-sizing: border-box;
+    }
+    input:focus, select:focus { border-color: #378ADD; }
+    button {
+      width: 100%; padding: 8px; background: #185FA5; color: #fff;
+      border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    button:hover { background: #0C447C; }
+    .saved { font-size: 12px; color: #1D9E75; text-align: center; margin-top: 8px; display: none; }
+    .sep { border-top: 1px solid #eee; margin: 14px 0; }
+    .about { font-size: 11px; color: #aaa; text-align: center; }
+    .about a { color: #888; }
+
+    .engine-section { display: none; }
+
+    .engine-badge {
+      display: inline-block; font-size: 10px; font-weight: 600;
+      padding: 2px 7px; border-radius: 4px; margin-bottom: 8px;
+    }
+    .engine-badge.deepl   { background: #0F2B46; color: #00C2A8; }
+    .engine-badge.gemini  { background: #E8F0FE; color: #1A73E8; }
+    .engine-badge.chatgpt { background: #EAF7EE; color: #10A37F; }
+    .engine-badge.claude  { background: #FAF0E6; color: #CC785C; }
+
+    .model-note { font-size: 11px; color: #aaa; margin: -8px 0 10px; }
+  </style>
+</head>
+  <div id="home-screen">
+    <h1><span class="logo">N</span> NarouEN Reader</h1>
+    
+    <label>小説家になろう URL</label>
+    <div style="display:flex; gap:8px; margin-bottom:14px;">
+      <input type="text" id="narou-url" placeholder="https://ncode.syosetu.com/n..." style="flex:1; margin-bottom:0;" />
+      <button id="read-btn" style="width:auto; padding:0 20px;">読む</button>
+    </div>
+    
+    <div id="read-msg" style="display:none; font-size:12px; color:#185FA5; margin-bottom:14px; text-align:center;"></div>
+    
+    <div class="sep"></div>
+
+    <label>翻訳エンジン</label>
+    <select id="engine">
+      <option value="deepl">DeepL (推奨)</option>
+      <option value="gemini">Gemini</option>
+      <option value="chatgpt">ChatGPT (OpenAI)</option>
+      <option value="claude">Claude (Anthropic)</option>
+    </select>
+
+    <!-- DeepL -->
+    <div class="engine-section" id="sec-deepl" style="display:block">
+      <span class="engine-badge deepl">DeepL Free</span>
+      <label>DeepL API キー</label>
+      <input type="password" id="deepl-key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+      <div class="model-note">無料枠: 500,000 字/月</div>
+    </div>
+
+    <!-- Gemini -->
+    <div class="engine-section" id="sec-gemini">
+      <span class="engine-badge gemini">Gemini 2.5 Flash</span>
+      <label>Gemini API キー</label>
+      <input type="password" id="gemini-key" placeholder="AIzaSy..." />
+      <div class="model-note">モデル: gemini-2.5-flash</div>
+    </div>
+
+    <!-- ChatGPT -->
+    <div class="engine-section" id="sec-chatgpt">
+      <span class="engine-badge chatgpt">GPT-4o mini</span>
+      <label>OpenAI API キー</label>
+      <input type="password" id="openai-key" placeholder="sk-..." />
+      <div class="model-note">モデル: gpt-4o-mini</div>
+    </div>
+
+    <!-- Claude -->
+    <div class="engine-section" id="sec-claude">
+      <span class="engine-badge claude">Claude Sonnet</span>
+      <label>Anthropic API キー</label>
+      <input type="password" id="claude-key" placeholder="sk-ant-..." />
+      <div class="model-note">モデル: claude-sonnet-4-20250514</div>
+    </div>
+
+    <div class="sep"></div>
+
+    <label>読み上げ速度（デフォルト）</label>
+    <select id="default-speed">
+      <option value="0.75">0.75×</option>
+      <option value="1.0" selected>1.0×</option>
+      <option value="1.25">1.25×</option>
+      <option value="1.5">1.5×</option>
+    </select>
+
+    <label>読み上げ音声モデル (Voice)</label>
+    <select id="tts-voice">
+      <option value="default">ブラウザ標準の音声</option>
+    </select>
+
+    <div style="display:flex; gap:8px;">
+      <button id="test-btn" style="background:#1D9E75;">キーのテスト</button>
+      <button id="save-btn" style="flex:1;">設定保存</button>
+    </div>
+    <div id="test-msg" style="font-size:11px; margin-top:10px; display:none; padding:8px; border-radius:6px; word-break:break-all;"></div>
+    <div class="saved" id="saved-msg">保存しました ✓</div>
+  </div>
+
+  <div id="reader-screen" style="display:none; width:100vw; height:100vh; position:fixed; top:0; left:0; right:0; bottom:0;">
+    <button id="back-home-btn" style="position:absolute; bottom:20px; right:20px; z-index:9999; background:#fff; color:#185FA5; border:1px solid #185FA5; width:auto; padding:8px 16px; border-radius:20px; box-shadow:0 2px 10px rgba(0,0,0,0.1);">戻る</button>
+    <iframe id="reader-frame" style="width:100%; height:100%; border:none;"></iframe>
+  </div>
+
+  <script type="module" src="/src/background.js"></script>
+  <script type="module" src="/src/app.js"></script>
+</body>
+</html>

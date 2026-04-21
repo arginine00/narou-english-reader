@@ -62,10 +62,10 @@
 
   // ── 3. 設定を取得 ──────────────────────────────────────────
   const settings = await new Promise(resolve => {
-    chrome.storage.local.get(['defaultSpeed', 'ttsLang'], data => {
+    chrome.storage.local.get(['defaultSpeed', 'ttsVoice'], data => {
       resolve({
-        speed:   data.defaultSpeed || '1.0',
-        ttsLang: data.ttsLang      || 'en-US',
+        speed:    data.defaultSpeed || '1.0',
+        ttsVoice: data.ttsVoice     || 'default',
       });
     });
   });
