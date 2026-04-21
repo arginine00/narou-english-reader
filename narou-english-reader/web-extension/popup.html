@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>NarouEN Settings</title>
+  <style>
+    body { width: 280px; padding: 16px; font-family: -apple-system, sans-serif; font-size: 14px; }
+    h1   { font-size: 15px; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    .logo { width: 22px; height: 22px; background: #185FA5; border-radius: 5px; color: #fff; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    label { display: block; font-size: 12px; color: #666; margin-bottom: 4px; }
+    input[type="text"], input[type="password"], select {
+      width: 100%; padding: 7px 10px; border: 1px solid #ddd; border-radius: 7px;
+      font-size: 13px; margin-bottom: 12px; outline: none;
+    }
+    input:focus { border-color: #378ADD; }
+    button {
+      width: 100%; padding: 8px; background: #185FA5; color: #fff;
+      border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    button:hover { background: #0C447C; }
+    .saved { font-size: 12px; color: #1D9E75; text-align: center; margin-top: 8px; display: none; }
+    .sep { border-top: 1px solid #eee; margin: 14px 0; }
+    .about { font-size: 11px; color: #aaa; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1><span class="logo">N</span> NarouEN Settings</h1>
+
+  <label>DeepL API キー</label>
+  <input type="password" id="api-key" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" />
+
+  <label>読み上げ速度（デフォルト）</label>
+  <select id="default-speed">
+    <option value="0.75">0.75×</option>
+    <option value="1.0" selected>1.0×</option>
+    <option value="1.25">1.25×</option>
+    <option value="1.5">1.5×</option>
+  </select>
+
+  <label>音声言語</label>
+  <select id="tts-lang">
+    <option value="en-US">English (US)</option>
+    <option value="en-GB">English (UK)</option>
+    <option value="en-AU">English (AU)</option>
+  </select>
+
+  <button onclick="save()">保存</button>
+  <div class="saved" id="saved-msg">保存しました ✓</div>
+
+  <div class="sep"></div>
+  <div class="about">
+    <a href="https://www.deepl.com/pro-api" target="_blank">DeepL API キーを取得する →</a>
+  </div>
+
+  <script>
+    chrome.storage.local.get(['deeplApiKey','defaultSpeed','ttsLang'], data => {
+      if (data.deeplApiKey)   document.getElementById('api-key').value        = data.deeplApiKey;
+      if (data.defaultSpeed)  document.getElementById('default-speed').value  = data.defaultSpeed;
+      if (data.ttsLang)       document.getElementById('tts-lang').value        = data.ttsLang;
+    });
+
+    function save() {
+      chrome.storage.local.set({
+        deeplApiKey:  document.getElementById('api-key').value.trim(),
+        defaultSpeed: document.getElementById('default-speed').value,
+        ttsLang:      document.getElementById('tts-lang').value,
+      }, () => {
+        const msg = document.getElementById('saved-msg');
+        msg.style.display = 'block';
+        setTimeout(() => { msg.style.display = 'none'; }, 1800);
+      });
+    }
+  </script>
+</body>
+</html>
