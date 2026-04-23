@@ -1,4 +1,5 @@
 import { CapacitorHttp } from '@capacitor/core';
+import { TextToSpeech } from '@capacitor-community/text-to-speech';
 
 const STORAGE_KEYS = [
   'translationEngine', 'deeplApiKey', 'geminiApiKey', 'openaiApiKey', 'claudeApiKey',
@@ -38,17 +39,9 @@ document.addEventListener('DOMContentLoaded', () => {
     speechSynthesis.onvoiceschanged = () => populateVoices(document.getElementById('tts-voice').value);
   }
 
-  // Capacitor WebView 対策: onvoiceschanged が発火しない場合があるため定期的にポーリング
-  let voiceAttempts = 0;
-  const voiceTimer = setInterval(() => {
-    const vs = speechSynthesis.getVoices();
-    if (vs.length > 0) {
-      clearInterval(voiceTimer);
-      populateVoices(document.getElementById('tts-voice').value);
-    }
-    voiceAttempts++;
-    if (voiceAttempts > 20) clearInterval(voiceTimer); // 10秒で諦める
-  }, 500);
+  // 以前の WebView ポーリングは不要なので削除
+  // ...
+  populateVoices();
 });
 
 // ── Capacitor Native HTTP による小説のパースと翻訳 ──
@@ -160,6 +153,23 @@ function handleReaderMessages(e) {
       window.handleTranslateChunks(msg.en).then(res => {
         respondToReader(msgId, { ok:true, result: res });
       });
+    } else if (msg.type === 'TTS_GET_VOICES') {
+      TextToSpeech.getSupportedVoices().then(res => {
+        respondToReader(msgId, { ok:true, result: res.voices });
+      });
+    } else if (msg.type === 'TTS_SPEAK') {
+      TextToSpeech.speak({
+        text: msg.text,
+        lang: msg.lang,
+        rate: msg.rate,
+        pitch: 1.0,
+      }).then(() => {
+        respondToReader(msgId, { ok:true, type: 'TTS_END' });
+      }).catch(err => {
+        respondToReader(msgId, { ok:false, error: err.message, type: 'TTS_ERROR' });
+      });
+    } else if (msg.type === 'TTS_STOP') {
+      TextToSpeech.stop();
     }
   }
 }
@@ -179,36 +189,40 @@ function populateVoices(savedVoiceUri = null) {
   const sel = document.getElementById('tts-voice');
   if (!sel) return;
 
-  const voices = speechSynthesis.getVoices().filter(v => {
-    // 一部のAndroidエンジンの仕様で lang が空文字列になる場合があるため緩く判定
-    if (!v.lang) return true; 
-    const l = v.lang.toLowerCase();
-    return l.startsWith('en') || l.includes('en-') || l.includes('en_') || l.includes('eng');
-  });
-  if (voices.length === 0) return;
+  TextToSpeech.getSupportedVoices().then(res => {
+    const rawVoices = res.voices;
+    const voices = rawVoices.filter(v => {
+      if (!v.lang) return true; 
+      const l = v.lang.toLowerCase();
+      // On some platforms, locales return like "en-US", "eng", "en_GB"
+      return l.startsWith('en') || l.includes('en-') || l.includes('en_') || l.includes('eng');
+    });
 
-  voices.sort((a, b) => {
-    const aGood = a.name.includes('Natural') || a.name.includes('Google') || a.name.includes('Online');
-    const bGood = b.name.includes('Natural') || b.name.includes('Google') || b.name.includes('Online');
-    if (aGood && !bGood) return -1;
-    if (!aGood && bGood) return 1;
-    return a.name.localeCompare(b.name);
-  });
+    if (voices.length === 0) return;
 
-  const currentVal = savedVoiceUri || sel.value;
-  sel.innerHTML = '<option value="default">ブラウザ標準の音声</option>';
-  
-  voices.forEach(v => {
-    const opt = document.createElement('option');
-    opt.value = v.voiceURI;
-    const isGood = v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Online');
-    opt.textContent = (isGood ? '★ ' : '') + `${v.name} (${v.lang})`;
-    sel.appendChild(opt);
-  });
+    voices.sort((a, b) => {
+      const aGood = a.name && (a.name.includes('Natural') || a.name.includes('Google') || a.name.includes('Online'));
+      const bGood = b.name && (b.name.includes('Natural') || b.name.includes('Google') || b.name.includes('Online'));
+      if (aGood && !bGood) return -1;
+      if (!aGood && bGood) return 1;
+      return (a.name || '').localeCompare(b.name || '');
+    });
 
-  if (currentVal && Array.from(sel.options).some(o => o.value === currentVal)) {
-    sel.value = currentVal;
-  }
+    const currentVal = savedVoiceUri || sel.value;
+    sel.innerHTML = '<option value="default">システム標準の音声</option>';
+    
+    voices.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.voiceURI || v.lang;
+      const isGood = v.name && (v.name.includes('Natural') || v.name.includes('Google') || v.name.includes('Online'));
+      opt.textContent = (isGood ? '★ ' : '') + `${v.name || 'Voice'} (${v.lang})`;
+      sel.appendChild(opt);
+    });
+
+    if (currentVal && Array.from(sel.options).some(o => o.value === currentVal)) {
+      sel.value = currentVal;
+    }
+  }).catch(() => {});
 }
 
 function onEngineChange() {

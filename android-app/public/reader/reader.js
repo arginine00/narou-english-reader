@@ -379,54 +379,52 @@ function highlightByChar(ci) {
 }
 
 function speakCurrent() {
-  if (!synth) return;
-  synth.cancel();
+  window.parent.postMessage({ type: 'CHROME_MSG', msgId: 'tts_stop_old', msg: { type: 'TTS_STOP' }}, '*');
 
-  const utt    = new SpeechSynthesisUtterance(S[curSent].tts);
-  utt.rate     = speed;
-  
+  const text = S[curSent].tts;
+  let langToSpeak = 'en-US';
+
   if (ttsVoiceUri && ttsVoiceUri !== 'default') {
-    const voices = synth.getVoices();
-    const voice = voices.find(v => v.voiceURI === ttsVoiceUri);
-    if (voice) utt.voice = voice;
-  } else {
-    utt.lang = 'en-US'; // fallback
+    const voice = nativeVoices.find(v => v.voiceURI === ttsVoiceUri || v.name === ttsVoiceUri);
+    if (voice && voice.lang) langToSpeak = voice.lang;
+    else langToSpeak = ttsVoiceUri;
   }
 
-  utt.onboundary = e => { if (e.name === 'word') highlightByChar(e.charIndex); };
-  utt.onend = () => {
-    clearHL();
-    if (!isPlaying) return;
+  const msgId = 'tts_play_' + Date.now();
+  
+  window.parent.postMessage({ 
+    type: 'CHROME_MSG', 
+    msgId: msgId, 
+    msg: { 
+      type: 'TTS_SPEAK', 
+      text: text,
+      lang: langToSpeak,
+      rate: speed
+    }
+  }, '*');
 
-    if (mode === 'single') {
-      // 1文モード: 停止して次の文へカーソルを移動
-      isPlaying = false;
-      if (curSent < S.length - 1) { curSent++; renderAll(); }
-      setPlayBtn(false);
-      updateUI();
-    } else {
-      // 連続モード: 次の文へ自動再生
-      if (curSent < S.length - 1) {
-        curSent++;
-        renderAll();
-        setTimeout(speakCurrent, 300);
-      } else {
-        isPlaying = false;
-        setPlayBtn(false);
-        updateUI();
+  window['cb_' + msgId] = function(res) {
+    if (res && res.type === 'TTS_END') {
+      if (isPlaying) {
+        if (curSent < S.length - 1) {
+          curSent++;
+          renderAll();
+          speakCurrent();
+        } else {
+          togglePlay();
+        }
       }
     }
+    clearHL();
   };
-  utt.onerror = () => { clearHL(); isPlaying = false; setPlayBtn(false); updateUI(); };
-  synth.speak(utt);
 }
 
 /* ─── コントロール ─── */
 
 function togglePlay() {
-  if (!synth) return;
   if (isPlaying) {
-    synth.cancel(); isPlaying = false; clearHL(); setPlayBtn(false); updateUI();
+    window.parent.postMessage({ type: 'CHROME_MSG', msgId: 'tts_stop', msg: { type: 'TTS_STOP' }}, '*');
+    isPlaying = false; clearHL(); setPlayBtn(false); updateUI();
   } else {
     isPlaying = true; setPlayBtn(true); updateUI(); speakCurrent();
   }
@@ -599,13 +597,9 @@ if (typeof S !== 'undefined' && S.length > 0) {
   renderAll();
 }
 
-// ── Capacitor WebView TTS 初期化ポーリング ──
-let initVoiceAttempts = 0;
-const initVoiceTimer = setInterval(() => {
-  if (synth.getVoices().length > 0) clearInterval(initVoiceTimer);
-  initVoiceAttempts++;
-  if (initVoiceAttempts > 20) clearInterval(initVoiceTimer);
-}, 500);
+// ── Native TTS 代替実装 ──
+let nativeVoices = [];
+window.parent.postMessage({ type: 'CHROME_MSG', msgId: 'tts_init', msg: { type: 'TTS_GET_VOICES' }}, '*');
 
 // ==========================================
 // イベントリスナー登録 (Manifest V3 CSP 対応)
