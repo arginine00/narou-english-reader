@@ -37,6 +37,18 @@ document.addEventListener('DOMContentLoaded', () => {
   if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = () => populateVoices(document.getElementById('tts-voice').value);
   }
+
+  // Capacitor WebView 対策: onvoiceschanged が発火しない場合があるため定期的にポーリング
+  let voiceAttempts = 0;
+  const voiceTimer = setInterval(() => {
+    const vs = speechSynthesis.getVoices();
+    if (vs.length > 0) {
+      clearInterval(voiceTimer);
+      populateVoices(document.getElementById('tts-voice').value);
+    }
+    voiceAttempts++;
+    if (voiceAttempts > 20) clearInterval(voiceTimer); // 10秒で諦める
+  }, 500);
 });
 
 // ── Capacitor Native HTTP による小説のパースと翻訳 ──
@@ -52,7 +64,9 @@ async function onReadClicked() {
   msgEl.textContent = 'なろうのデータを取得中...';
 
   try {
-    const res = await CapacitorHttp.get({ url });
+    // 18禁サイト(novel18)の年齢確認画面をスキップするため Cookie を付与
+    const headers = { 'Cookie': 'over18=yes' };
+    const res = await CapacitorHttp.get({ url, headers });
     const html = res.data;
     
     msgEl.textContent = '文章を解析中...';
@@ -165,7 +179,12 @@ function populateVoices(savedVoiceUri = null) {
   const sel = document.getElementById('tts-voice');
   if (!sel) return;
 
-  const voices = speechSynthesis.getVoices().filter(v => v.lang.startsWith('en'));
+  const voices = speechSynthesis.getVoices().filter(v => {
+    // 一部のAndroidエンジンの仕様で lang が空文字列になる場合があるため緩く判定
+    if (!v.lang) return true; 
+    const l = v.lang.toLowerCase();
+    return l.startsWith('en') || l.includes('en-') || l.includes('en_') || l.includes('eng');
+  });
   if (voices.length === 0) return;
 
   voices.sort((a, b) => {

@@ -599,6 +599,14 @@ if (typeof S !== 'undefined' && S.length > 0) {
   renderAll();
 }
 
+// ── Capacitor WebView TTS 初期化ポーリング ──
+let initVoiceAttempts = 0;
+const initVoiceTimer = setInterval(() => {
+  if (synth.getVoices().length > 0) clearInterval(initVoiceTimer);
+  initVoiceAttempts++;
+  if (initVoiceAttempts > 20) clearInterval(initVoiceTimer);
+}, 500);
+
 // ==========================================
 // イベントリスナー登録 (Manifest V3 CSP 対応)
 // ==========================================

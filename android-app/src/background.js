@@ -6,6 +6,8 @@
  *   - 対応エンジン: DeepL / Gemini / ChatGPT (OpenAI) / Claude (Anthropic)
  *   - CORS を回避するために Service Worker 側でフェッチする
  *   - 翻訳結果を chrome.storage.local にキャッシュして API 消費を削減
+ */
+
 const CACHE_PREFIX = 'trans_';
 
 // ── Chrome Extension API Polyfill for Android (Capacitor) ──
@@ -430,4 +432,12 @@ async function handleLookupWord(word) {
 
   await chrome.storage.local.set({ [cacheKey]: result });
   return result;
+}
+
+// ── Capacitor 用グローバルエクスポート ──
+if (typeof window !== 'undefined') {
+  window.handleTranslateBatch = handleTranslateBatch;
+  window.handleTestApi = handleTestApi;
+  window.handleTranslateChunks = handleTranslateChunks;
+  window.handleLookupWord = handleLookupWord;
 }
