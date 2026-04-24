@@ -12,15 +12,24 @@
  */
 
 (async () => {
-  // ── 1. 小説本文の取得（旧/新レイアウト両対応） ─────────────
-  const novelBody =
-    document.querySelector('#novel_honbun') ||         // 旧レイアウト
-    document.querySelector('.js-novel-text') ||         // 新レイアウト
-    document.querySelector('.p-novel__text') ||         // 新レイアウト (別名)
-    document.querySelector('#novel_view');              // フォールバック
-  if (!novelBody) return;
+  // SPMobile版なろうでは広告を挟むために .js-novel-text 等が複数に分割される事がある。
+  // そのため、対象となるすべての本文ブロックを取得する。
+  const sections = Array.from(document.querySelectorAll('#novel_p, #novel_honbun, #novel_a, .js-novel-text, .p-novel__text, .p-novel__text--preface, .p-novel__text--afterword'));
+  
+  let pTags = [];
+  if (sections.length > 0) {
+    sections.forEach(sec => {
+      sec.querySelectorAll('p').forEach(p => pTags.push(p));
+    });
+  } else {
+    const fb = document.querySelector('#novel_view');
+    if (fb) fb.querySelectorAll('p').forEach(p => pTags.push(p));
+  }
 
-  const rawParagraphs = [...novelBody.querySelectorAll('p')]
+  // 重複排除（同じ要素が複数のクラスにマッチした場合など）
+  const uniquePTags = Array.from(new Set(pTags));
+
+  const rawParagraphs = uniquePTags
     .map(p => p.innerText.trim())
     .filter(t => t.length > 0);
 
