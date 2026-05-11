@@ -42,6 +42,58 @@ const LONGMS = 500;  // 長押し判定時間 (ms)
 
 let pendingClick = null;
 let longTimer    = null;
+let activeWordKey = '';
+let activeWordJp = '';
+
+const WORD_STATS_KEY = 'ner_word_stats_v1';
+
+function loadWordStats() {
+  try {
+    return JSON.parse(localStorage.getItem(WORD_STATS_KEY) || '{}');
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveWordStats(stats) {
+  localStorage.setItem(WORD_STATS_KEY, JSON.stringify(stats));
+}
+
+function showReaderToast(message, isError = false) {
+  const el = document.getElementById('reader-toast');
+  if (!el) return;
+  el.textContent = message;
+  el.style.background = isError ? '#c5221f' : '#185FA5';
+  el.style.display = 'block';
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => { el.style.display = 'none'; }, 2200);
+}
+
+function trackLookup(word) {
+  const stats = loadWordStats();
+  if (!stats[word]) stats[word] = { lookupCount: 0, saved: false, jp: '' };
+  stats[word].lookupCount += 1;
+  saveWordStats(stats);
+  return stats[word];
+}
+
+function updateWordMeta(word) {
+  const stats = loadWordStats();
+  const row = stats[word] || { lookupCount: 0, saved: false };
+  const countEl = document.getElementById('wp-count');
+  const btn = document.getElementById('wp-save-btn');
+  countEl.textContent = `翻訳回数: ${row.lookupCount}回`;
+  btn.textContent = row.saved ? '辞書登録済み' : '辞書登録';
+  btn.classList.toggle('saved', !!row.saved);
+}
+
+function saveWordToUserDict(word, jp) {
+  const stats = loadWordStats();
+  if (!stats[word]) stats[word] = { lookupCount: 0, saved: false, jp: '' };
+  stats[word].saved = true;
+  stats[word].jp = jp || stats[word].jp || '';
+  saveWordStats(stats);
+}
 
 /* ─── ユーティリティ ─── */
 
@@ -270,18 +322,32 @@ function showWordPanel(key, sp) {
   const wpNote = document.getElementById('wp-note');
 
   wpEn.textContent = key;
+  activeWordKey = key;
+  activeWordJp = '';
+  trackLookup(key);
+  updateWordMeta(key);
   document.getElementById('word-pane').style.display  = 'block';
   document.getElementById('chunk-pane').style.display = 'none';
   document.getElementById('info-panel').classList.add('open');
 
   // 1. ローカル辞書を優先チェック
-  if (DICT[key]) {
-    wpJp.textContent   = DICT[key].jp;
-    wpNote.textContent = DICT[key].note;
+  const stats = loadWordStats();
+  if (stats[key] && stats[key].saved && stats[key].jp) {
+    wpJp.textContent = stats[key].jp;
+    wpNote.textContent = '（マイ辞書）';
+    activeWordJp = stats[key].jp;
     return;
   }
 
-  // 2. Chrome 拡張モード: background.js 経由で辞書 API を呼ぶ
+  // 2. 既存辞書
+  if (DICT[key]) {
+    wpJp.textContent   = DICT[key].jp;
+    wpNote.textContent = DICT[key].note;
+    activeWordJp = DICT[key].jp;
+    return;
+  }
+
+  // 3. Chrome 拡張モード: background.js 経由で辞書 API を呼ぶ
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
     wpJp.textContent   = '検索中…';
     wpNote.textContent = '';
@@ -290,6 +356,7 @@ function showWordPanel(key, sp) {
         const r = res.result;
         wpJp.textContent   = r.definition;
         wpNote.textContent = r.partOfSpeech + (r.phonetic ? '  ' + r.phonetic : '');
+        activeWordJp = r.definition || '';
       } else {
         wpJp.textContent   = '（辞書にない単語）';
         wpNote.textContent = '';
@@ -298,7 +365,7 @@ function showWordPanel(key, sp) {
     return;
   }
 
-  // 3. スタンドアロンモード: ローカル辞書のみ
+  // 4. スタンドアロンモード: ローカル辞書のみ
   wpJp.textContent   = '（辞書にない単語）';
   wpNote.textContent = '';
 }
@@ -358,6 +425,56 @@ function closePanel() {
   document.querySelectorAll('.w.wsel').forEach(el => el.classList.remove('wsel'));
 }
 
+function bindWordSaveButton() {
+  const btn = document.getElementById('wp-save-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    if (!activeWordKey) return;
+    saveWordToUserDict(activeWordKey, activeWordJp);
+    updateWordMeta(activeWordKey);
+  });
+}
+
+function renderDictManager() {
+  const box = document.getElementById('dict-list');
+  if (!box) return;
+  const stats = loadWordStats();
+  const rows = Object.entries(stats).filter(([, v]) => v.saved);
+  if (!rows.length) {
+    box.innerHTML = '<div style="font-size:12px;color:#888;">登録単語はありません。</div>';
+    return;
+  }
+  box.innerHTML = rows.map(([w, v]) => `<div style="border-bottom:1px solid #eee;padding:8px 0;"><div style="font-weight:600;">${w}</div><div style="font-size:12px;color:#666;">${v.jp || '(未登録訳)'} / 参照 ${v.lookupCount || 0}回</div><button data-w="${w}" class="dict-del cb" style="padding:3px 8px;margin-top:4px;">削除</button></div>`).join('');
+  box.querySelectorAll('.dict-del').forEach(btn => btn.addEventListener('click', () => {
+    const w = btn.dataset.w;
+    const st = loadWordStats();
+    if (st[w]) { st[w].saved = false; saveWordStats(st); }
+    renderDictManager();
+  }));
+}
+
+function openDictManager() {
+  renderDictManager();
+  const modal = document.getElementById('dict-modal');
+  if (modal) modal.style.display = 'block';
+}
+
+function startStudyMode() {
+  const stats = loadWordStats();
+  const words = Object.entries(stats).filter(([, v]) => v.saved && v.jp).slice(0, 8);
+  if (!words.length) return showReaderToast('復習対象の登録単語がありません。', true);
+  let i = 0;
+  const run = () => {
+    if (i >= words.length) return showReaderToast('復習完了です！');
+    const [w, v] = words[i];
+    const known = confirm(`Q${i + 1}/${words.length}: "${w}" の意味を思い出せましたか？`);
+    if (!known) showReaderToast(`答え: ${v.jp}`);
+    i += 1;
+    setTimeout(run, 100);
+  };
+  run();
+}
+
 /* ─── TTS ─── */
 
 function highlightByChar(ci) {
@@ -412,6 +529,9 @@ function speakCurrent() {
           speakCurrent();
         } else {
           togglePlay();
+          if (mode === 'cont' && metaNextUrl) {
+            window.parent.postMessage({ type: 'NAVIGATE', url: metaNextUrl, autoPlay: true }, '*');
+          }
         }
       }
     }
@@ -613,6 +733,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // パネル閉じるボタン
   document.getElementById('close-word-pane')?.addEventListener('click', closePanel);
   document.getElementById('close-chunk-pane')?.addEventListener('click', closePanel);
+  bindWordSaveButton();
 
   // コントローラー
   document.getElementById('mode-single')?.addEventListener('click', () => setMode('single'));
@@ -624,4 +745,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('spd-sel')?.addEventListener('change', onSpeedChange);
   document.getElementById('bm-btn')?.addEventListener('click', saveBookmark);
+  document.getElementById('btn-study')?.addEventListener('click', startStudyMode);
+  document.getElementById('btn-dict-manage')?.addEventListener('click', openDictManager);
+  document.getElementById('dict-close')?.addEventListener('click', () => { document.getElementById('dict-modal').style.display = 'none'; });
+  document.getElementById('dict-export')?.addEventListener('click', () => {
+    const blob = new Blob([JSON.stringify(loadWordStats(), null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `my-dict-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+  document.getElementById('dict-import-btn')?.addEventListener('click', () => document.getElementById('dict-import-file')?.click());
+  document.getElementById('dict-import-file')?.addEventListener('change', (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      try { saveWordStats(JSON.parse(String(r.result || '{}'))); renderDictManager(); showReaderToast('辞書をインポートしました。'); }
+      catch (_) { showReaderToast('インポートに失敗しました。', true); }
+    };
+    r.readAsText(f);
+  });
 });
