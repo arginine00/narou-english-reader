@@ -29,22 +29,18 @@ function showToast(message, isError = false) {
   t._timer = setTimeout(() => { t.style.display = 'none'; }, 2400);
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  // エンジン切り替え
-  document.getElementById('engine').addEventListener('change', onEngineChange);
-  document.getElementById('test-btn').addEventListener('click', testApi);
-  document.getElementById('save-btn').addEventListener('click', save);
-  document.getElementById('export-settings-btn')?.addEventListener('click', exportSettings);
-  document.getElementById('import-settings-btn')?.addEventListener('click', () => document.getElementById('import-settings-file')?.click());
-  document.getElementById('import-settings-file')?.addEventListener('change', importSettings);
 document.addEventListener("DOMContentLoaded", () => {
   // エンジン切り替え
   document.getElementById("engine").addEventListener("change", onEngineChange);
   document.getElementById("test-btn").addEventListener("click", testApi);
   document.getElementById("save-btn").addEventListener("click", save);
+  document.getElementById("export-settings-btn")?.addEventListener("click", exportSettings);
+  document.getElementById("import-settings-btn")?.addEventListener("click", () => document.getElementById("import-settings-file")?.click());
+  document.getElementById("import-settings-file")?.addEventListener("change", importSettings);
 
   // 読み込みボタン
   document.getElementById("read-btn").addEventListener("click", onReadClicked);
+  document.getElementById("go-narou-btn").addEventListener("click", () => openBrowser("https://yomou.syosetu.com/"));
 
   // 検索ボタン
   document.getElementById("search-btn").addEventListener("click", () => {
@@ -62,16 +58,26 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("back-home-btn").addEventListener("click", () => {
     document.getElementById("reader-screen").style.display = "none";
     document.getElementById("home-screen").style.display = "block";
+    if (currentIab) {
+      currentIab.close();
+      currentIab = null;
+    }
+  });
+
+  // 小説画面に戻るボタン
+  document.getElementById("back-novel-btn").addEventListener("click", () => {
+    document.getElementById("reader-screen").style.display = "none";
+    if (currentIab) {
+      currentIab.show();
+    } else {
+      document.getElementById("home-screen").style.display = "block";
+    }
   });
 
   // 目次ボタン
   document.getElementById("toc-btn").addEventListener("click", () => {
     if (currentTocUrl) showToc(currentTocUrl);
     else showToast('目次情報がありません。ホームからURLを入力してください。', true);
-    else
-      alert(
-        "目次情報がありません。お手数ですがホームからURLを直接入力してください。",
-      );
   });
 
   // iframe内のリーダーからのメッセージ受信
@@ -123,34 +129,39 @@ function openBrowser(url, autoTranslate = false) {
     
   currentIab = cordova.InAppBrowser.open(url, '_blank', options);
 
-  currentIab.addEventListener('loadstop', (e) => {
-    const isNovelPage = e.url.match(/(ncode|novel18|moonlight)\.syosetu\.com/i) && e.url.match(/\/n[0-9a-z]+(\/\d+)?\/?$/i);
-    if (isNovelPage) {
-      if (autoTranslate) {
-        extractAndTranslate();
-        return;
-      }
-      const injection = `
+  const injectFab = () => {
+    if (autoTranslate) return;
+    const injection = `
         (function() {
-          if (document.getElementById('narou-en-fab')) return;
-          let fab = document.createElement('div');
-          fab.id = 'narou-en-fab';
-          fab.style.cssText = 'position:fixed; bottom:20px; right:20px; background:#1D9E75; color:white; padding:12px 20px; border-radius:24px; font-family:sans-serif; font-size:14px; font-weight:bold; box-shadow:0 4px 12px rgba(0,0,0,0.3); cursor:pointer; z-index:999999;';
-          fab.innerText = '📖 翻訳して読む';
-          fab.onclick = function() {
-            var msgString = JSON.stringify({ type: 'BROWSER_TRANSLATE', url: window.location.href });
-            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.cordova_iab) {
-              window.webkit.messageHandlers.cordova_iab.postMessage(msgString);
-            } else if (window.cordova_iab) {
-              window.cordova_iab.postMessage(msgString);
-            }
-          };
-          document.body.appendChild(fab);
+          if (window.__narou_en_injected) return;
+          window.__narou_en_injected = true;
+          setInterval(function() {
+            if (!document.body) return;
+            var existing = document.getElementById('narou-en-fab');
+            if (existing) return;
+            var fab = document.createElement('div');
+            fab.id = 'narou-en-fab';
+            fab.style.cssText = 'position:fixed; bottom:140px; right:20px; background:#1D9E75; color:white; padding:16px 24px; border-radius:30px; font-family:sans-serif; font-size:16px; font-weight:bold; box-shadow:0 6px 16px rgba(0,0,0,0.4); cursor:pointer; z-index:2147483647;';
+            fab.innerText = '📖 翻訳して読む';
+            fab.onclick = function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              var msgString = JSON.stringify({ type: 'BROWSER_TRANSLATE', url: window.location.href });
+              if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.cordova_iab) {
+                window.webkit.messageHandlers.cordova_iab.postMessage(msgString);
+              } else if (window.cordova_iab) {
+                window.cordova_iab.postMessage(msgString);
+              }
+            };
+            document.body.appendChild(fab);
+          }, 1000);
         })();
       `;
       currentIab.executeScript({ code: injection });
-    }
-  });
+  };
+
+  currentIab.addEventListener('loadstart', injectFab);
+  currentIab.addEventListener('loadstop', injectFab);
 
   currentIab.addEventListener('message', (e) => {
     if (e.data && e.data.type === 'BROWSER_TRANSLATE') {
@@ -166,101 +177,6 @@ function openBrowser(url, autoTranslate = false) {
   });
 }
 
-// \u2500\u2500 \u96a0\u3057iframe\u3092\u4f7f\u3063\u3066\u30dd\u30fc\u30b8\u304b\u3089\u672c\u6587\u304a\u3088\u3073\u30e1\u30bf\u30c7\u30fc\u30bf\u3092\u53d6\u5f97 \u2500\u2500
-function scrapeWithHiddenIframe(url, msgEl) {
-  return new Promise((resolve, reject) => {
-    const isNovel18 = /https?:\/\/(novel18|moonlight)\.syosetu\.com\//i.test(url);
-    const novelOrigin = new URL(url).origin;
-    // \u65e2\u5b58\u306e\u96a0\u3057iframe\u304c\u3042\u308c\u3070\u524a\u9664
-    const old = document.getElementById('scrape-iframe');
-    if (old) old.remove();
-
-    const iframe = document.createElement('iframe');
-    iframe.id = 'scrape-iframe';
-    iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;visibility:hidden;';
-    iframe.sandbox = 'allow-scripts allow-same-origin allow-forms';
-    document.body.appendChild(iframe);
-
-    const TIMEOUT_MS = 30000; // 30\u79d2\u30bf\u30a4\u30e0\u30a2\u30a6\u30c8
-    let done = false;
-
-    const timer = setTimeout(() => {
-      if (!done) {
-        done = true;
-        iframe.remove();
-        reject(new Error('\u30da\u30fc\u30b8\u306e\u8aad\u307f\u8fbc\u307f\u304c\u30bf\u30a4\u30e0\u30a2\u30a6\u30c8\u3057\u307e\u3057\u305f\u3002'));
-      }
-    }, TIMEOUT_MS);
-
-    // iframe\u304b\u3089\u306e\u30c7\u30fc\u30bf\u3092\u53d7\u4fe1
-    const msgHandler = (e) => {
-      if (e.data && e.data.type === 'SCRAPE_RESULT') {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        window.removeEventListener('message', msgHandler);
-        iframe.remove();
-        resolve(e.data);
-      }
-    };
-    window.addEventListener('message', msgHandler);
-
-    let ageVerified = !isNovel18;
-
-    iframe.onload = () => {
-      if (done) return;
-
-      if (!ageVerified) {
-        ageVerified = true;
-        if (msgEl) msgEl.textContent = '年齢認証ページを通過中...';
-        try {
-          const doc = iframe.contentDocument;
-          const s = doc.createElement('script');
-          s.textContent = `
-            (function() {
-              try {
-                var form = document.querySelector('form[action*="yes18"], form');
-                if (!form) {
-                  location.href = ${JSON.stringify(url)};
-                  return;
-                }
-                var yes = form.querySelector('input[name="yes"]');
-                if (yes) yes.value = 'yes';
-                form.submit();
-              } catch (_) {
-                location.href = ${JSON.stringify(url)};
-              }
-            })();
-          `;
-          doc.body.appendChild(s);
-        } catch (_) {
-          iframe.src = url;
-        }
-        setTimeout(() => {
-          if (!done && iframe.src !== url) iframe.src = url;
-        }, 1000);
-        return;
-      }
-
-      if (msgEl) msgEl.textContent = '\u30da\u30fc\u30b8\u304c\u8aad\u307f\u8fbc\u307e\u308c\u307e\u3057\u305f\u3002\u672c\u6587\u3092\u62bd\u51fa\u4e2d...';
-
-      // iframe\u306b\u672c\u6587\u62bd\u51fa\u30b9\u30af\u30ea\u30d7\u30c8\u3092\u6ce8\u5165
-      try {
-        const win = iframe.contentWindow;
-        const doc = iframe.contentDocument;
-
-        const extractScript = `
-(function() {
-  try {
-    const knownSels = ['#novel_p','#novel_honbun','#novel_a','.js-novel-text','.p-novel__text','.p-novel__text--preface','.p-novel__text--afterword'];
-    const sections = Array.from(document.querySelectorAll(knownSels.join(',')));
-    let paras = [];
-    if (sections.length > 0) {
-      const pTags = Array.from(new Set(sections.flatMap(s => Array.from(s.querySelectorAll('p')))));
-      if (pTags.length > 0) {
-        paras = pTags.map(p => p.innerText.trim()).filter(t => t.length > 0);
-      } else {
-        paras = sections.map(s => s.innerText.trim()).join('\\n').split(/\\n+/).map(l => l.trim()).filter(t => t.length > 0);
 function extractAndTranslate() {
   if (!currentIab) return;
   const extractScript = `
@@ -329,17 +245,13 @@ function extractAndTranslate() {
     })();
   `;
 
-    iframe.src = isNovel18 ? `${novelOrigin}/yes18/` : url;
-  });
-}
-
   currentIab.executeScript({ code: extractScript }, (results) => {
     const data = results && results.length > 0 ? results[0] : null;
     if (!data || !data.paragraphs || data.paragraphs.length === 0) {
       alert('小説本文が見つかりませんでした。');
       return;
     }
-    if (currentIab) currentIab.close();
+    if (currentIab) currentIab.hide();
     startTranslatingAndReading(data);
   });
 }
@@ -593,17 +505,6 @@ async function searchNarou(keyword) {
     const overlay = document.createElement('div');
     overlay.id = 'search-overlay';
     overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#fff;overflow-y:auto;padding:16px;font-family:-apple-system,sans-serif;';
-      alert(
-        "\u691c\u7d22\u7d50\u679c\u304c\u3042\u308a\u307e\u305b\u3093\u3067\u3057\u305f\u3002",
-      );
-      return;
-    }
-
-    const results = data.slice(1); // \u6700\u521d\u306f\u30ab\u30a6\u30f3\u30c8\u60c5\u5831
-    const overlay = document.createElement("div");
-    overlay.id = "search-overlay";
-    overlay.style.cssText =
-      "position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#fff;overflow-y:auto;padding:16px;font-family:-apple-system,sans-serif;";
     overlay.innerHTML = `
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;border-bottom:1px solid #eee;padding-bottom:12px;">
         <button id="search-close" style="background:#185FA5;color:#fff;border:none;padding:8px 16px;border-radius:8px;font-size:14px;">\u2190 \u623b\u308b</button>
