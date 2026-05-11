@@ -49,6 +49,19 @@
       <input type="text" id="search-input" placeholder="タイトル・キーワードで検索..." style="flex:1; margin-bottom:0;" />
       <button id="search-btn" style="width:auto; padding:0 18px; background:#1D9E75;">検索</button>
     </div>
+    <div style="display:flex; gap:8px; margin-bottom:14px;">
+      <select id="filter-state" style="margin-bottom:0;">
+        <option value="all">すべて</option>
+        <option value="serial">連載中</option>
+        <option value="ended">完結済み</option>
+      </select>
+      <select id="filter-minlen" style="margin-bottom:0;">
+        <option value="0">文字数: 指定なし</option>
+        <option value="50000">5万字以上</option>
+        <option value="100000">10万字以上</option>
+        <option value="300000">30万字以上</option>
+      </select>
+    </div>
     
     <div id="read-msg" style="display:none; font-size:12px; color:#185FA5; margin-bottom:14px; text-align:center;"></div>
     
@@ -113,6 +126,10 @@
       <button id="test-btn" style="background:#1D9E75;">キーのテスト</button>
       <button id="save-btn" style="flex:1;">設定保存</button>
     </div>
+    <div style="display:flex; gap:8px; margin-top:8px;">
+      <button id="export-settings-btn" style="background:#6A7788;">設定エクスポート</button>
+      <button id="import-settings-btn" style="background:#6A7788;">設定インポート</button>
+    </div>
     <div id="test-msg" style="font-size:11px; margin-top:10px; display:none; padding:8px; border-radius:6px; word-break:break-all;"></div>
     <div class="saved" id="saved-msg">保存しました ✓</div>
   </div>
@@ -128,5 +145,6 @@
 
   <script type="module" src="/src/background.js"></script>
   <script type="module" src="/src/app.js"></script>
+  <input type="file" id="import-settings-file" accept="application/json" style="display:none" />
 </body>
 </html>

@@ -9,11 +9,29 @@ const STORAGE_KEYS = [
 // 現在開いている小説の目次URLを保持
 let currentTocUrl = '';
 
+function showToast(message, isError = false) {
+  let t = document.getElementById('app-toast');
+  if (!t) {
+    t = document.createElement('div');
+    t.id = 'app-toast';
+    t.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:999999;padding:8px 12px;border-radius:8px;font-size:12px;color:#fff;background:#185FA5;';
+    document.body.appendChild(t);
+  }
+  t.textContent = message;
+  t.style.background = isError ? '#c5221f' : '#185FA5';
+  t.style.display = 'block';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.style.display = 'none'; }, 2400);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   // エンジン切り替え
   document.getElementById('engine').addEventListener('change', onEngineChange);
   document.getElementById('test-btn').addEventListener('click', testApi);
   document.getElementById('save-btn').addEventListener('click', save);
+  document.getElementById('export-settings-btn')?.addEventListener('click', exportSettings);
+  document.getElementById('import-settings-btn')?.addEventListener('click', () => document.getElementById('import-settings-file')?.click());
+  document.getElementById('import-settings-file')?.addEventListener('change', importSettings);
 
   // 読み込みボタン
   document.getElementById('read-btn').addEventListener('click', onReadClicked);
@@ -39,7 +57,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 目次ボタン
   document.getElementById('toc-btn').addEventListener('click', () => {
     if (currentTocUrl) showToc(currentTocUrl);
-    else alert('目次情報がありません。お手数ですがホームからURLを直接入力してください。');
+    else showToast('目次情報がありません。ホームからURLを入力してください。', true);
   });
 
   // iframe内のリーダーからのメッセージ受信
@@ -149,6 +167,8 @@ async function loadNovel(url) {
 // \u2500\u2500 \u96a0\u3057iframe\u3092\u4f7f\u3063\u3066\u30dd\u30fc\u30b8\u304b\u3089\u672c\u6587\u304a\u3088\u3073\u30e1\u30bf\u30c7\u30fc\u30bf\u3092\u53d6\u5f97 \u2500\u2500
 function scrapeWithHiddenIframe(url, msgEl) {
   return new Promise((resolve, reject) => {
+    const isNovel18 = /https?:\/\/(novel18|moonlight)\.syosetu\.com\//i.test(url);
+    const novelOrigin = new URL(url).origin;
     // \u65e2\u5b58\u306e\u96a0\u3057iframe\u304c\u3042\u308c\u3070\u524a\u9664
     const old = document.getElementById('scrape-iframe');
     if (old) old.remove();
@@ -183,8 +203,43 @@ function scrapeWithHiddenIframe(url, msgEl) {
     };
     window.addEventListener('message', msgHandler);
 
+    let ageVerified = !isNovel18;
+
     iframe.onload = () => {
       if (done) return;
+
+      if (!ageVerified) {
+        ageVerified = true;
+        if (msgEl) msgEl.textContent = '年齢認証ページを通過中...';
+        try {
+          const doc = iframe.contentDocument;
+          const s = doc.createElement('script');
+          s.textContent = `
+            (function() {
+              try {
+                var form = document.querySelector('form[action*="yes18"], form');
+                if (!form) {
+                  location.href = ${JSON.stringify(url)};
+                  return;
+                }
+                var yes = form.querySelector('input[name="yes"]');
+                if (yes) yes.value = 'yes';
+                form.submit();
+              } catch (_) {
+                location.href = ${JSON.stringify(url)};
+              }
+            })();
+          `;
+          doc.body.appendChild(s);
+        } catch (_) {
+          iframe.src = url;
+        }
+        setTimeout(() => {
+          if (!done && iframe.src !== url) iframe.src = url;
+        }, 1000);
+        return;
+      }
+
       if (msgEl) msgEl.textContent = '\u30da\u30fc\u30b8\u304c\u8aad\u307f\u8fbc\u307e\u308c\u307e\u3057\u305f\u3002\u672c\u6587\u3092\u62bd\u51fa\u4e2d...';
 
       // iframe\u306b\u672c\u6587\u62bd\u51fa\u30b9\u30af\u30ea\u30d7\u30c8\u3092\u6ce8\u5165
@@ -247,132 +302,10 @@ function scrapeWithHiddenIframe(url, msgEl) {
       }
     };
 
-    iframe.src = url;
+    iframe.src = isNovel18 ? `${novelOrigin}/yes18/` : url;
   });
 }
 
-  try {
-    const isNovel18 = url.includes('novel18.syosetu.com') || url.includes('moonlight.syosetu.com');
-    if (isNovel18) {
-      try {
-        const origin = new URL(url).origin;
-        await CapacitorHttp.post({
-          url: `${origin}/yes18/`,
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Referer': url },
-          data: 'yes=yes',
-        });
-      } catch (_) {}
-    }
-
-    const headers = isNovel18 ? { 'Cookie': 'over18=yes', 'Referer': url } : {};
-    const res = await CapacitorHttp.get({ url, headers });
-    const html = res.data;
-    msgEl.textContent = '文章を解析中...';
-
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-
-    // ── 小説本文接リ: 複数ストラテジーで対応 ──
-    let rawParagraphs = [];
-    const knownSelectors = [
-      '#novel_p', '#novel_honbun', '#novel_a',
-      '.js-novel-text', '.p-novel__text',
-      '.p-novel__text--preface', '.p-novel__text--afterword',
-    ];
-    const sections = Array.from(doc.querySelectorAll(knownSelectors.join(', ')));
-
-    if (sections.length > 0) {
-      const pTags = Array.from(new Set(sections.flatMap(s => Array.from(s.querySelectorAll('p')))));
-      if (pTags.length > 0) {
-        rawParagraphs = pTags.map(p => p.innerText.trim()).filter(t => t.length > 0);
-      } else {
-        const combined = sections.map(s => s.innerText.trim()).join('\n');
-        rawParagraphs = combined.split(/\n+/).map(l => l.trim()).filter(t => t.length > 0);
-      }
-    }
-    if (rawParagraphs.length === 0) {
-      const fb = doc.querySelector('#novel_view');
-      if (fb) {
-        const pTags = Array.from(fb.querySelectorAll('p'));
-        rawParagraphs = pTags.length > 0
-          ? pTags.map(p => p.innerText.trim()).filter(t => t.length > 0)
-          : fb.innerText.split(/\n+/).map(l => l.trim()).filter(t => t.length > 0);
-      }
-    }
-    if (rawParagraphs.length === 0) {
-      const allDivs = Array.from(doc.querySelectorAll('div, section, article'));
-      let bestEl = null, bestLen = 0;
-      for (const el of allDivs) {
-        const txt = el.innerText || '';
-        if (txt.length > bestLen && !el.querySelector('nav,header,footer,aside,script,style')) {
-          bestLen = txt.length; bestEl = el;
-        }
-      }
-      if (bestEl) rawParagraphs = bestEl.innerText.split(/\n+/).map(l => l.trim()).filter(t => t.length > 5);
-    }
-    if (rawParagraphs.length === 0) throw new Error('小説本文が見つかりませんでした。対応サイトか正しいURLかお確かめください。');
-
-    // ── メタデータ取得 ──
-    const titleEl = doc.querySelector('.p-novel__title') || doc.querySelector('.contents1 a') || doc.querySelector('#novel_ex');
-    const novelTitle = titleEl ? titleEl.textContent.trim() : '';
-
-    // 前後チャプター URL 取得
-    let prevUrl = '', nextUrl = '';
-    const newPrev = doc.querySelector('.c-pager__item--prev a, .c-pager a[rel="prev"]');
-    const newNext = doc.querySelector('.c-pager__item--next a, .c-pager a[rel="next"]');
-    if (newPrev) prevUrl = newPrev.href || '';
-    if (newNext) nextUrl = newNext.href || '';
-    if (!prevUrl && !nextUrl) {
-      doc.querySelectorAll('.novel_bn a').forEach(a => {
-        const t = a.textContent;
-        if (t.includes('前') || t.includes('prev')) prevUrl = a.href;
-        if (t.includes('次') || t.includes('next')) nextUrl = a.href;
-      });
-    }
-    // 目次ページ URL
-    const tocUrl = (() => {
-      const m = url.match(/(https?:\/\/[\w.]+\/[a-z0-9]+\/)/i);
-      return m ? m[1] : '';
-    })();
-    currentTocUrl = tocUrl; // TOC ボタンから参照できるよう保存
-
-    msgEl.textContent = `翻訳エンジンを起動中... (全 ${rawParagraphs.length} 段落)`;
-    const translatedParagraphs = [];
-    const BATCH_SIZE = 20;
-    for (let i = 0; i < rawParagraphs.length; i += BATCH_SIZE) {
-      const batch = rawParagraphs.slice(i, i + BATCH_SIZE);
-      msgEl.textContent = `翻訳中... (${Math.min(i + BATCH_SIZE, rawParagraphs.length)} / ${rawParagraphs.length})`;
-      try {
-        const results = await window.handleTranslateBatch(batch, 'JA', 'EN');
-        for (let j = 0; j < batch.length; j++) translatedParagraphs.push({ jp: batch[j], en: results[j] });
-      } catch (err) { throw new Error('翻訳エラー: ' + err.message); }
-      if (i + BATCH_SIZE < rawParagraphs.length) await new Promise(r => setTimeout(r, 12000));
-    }
-
-    msgEl.textContent = 'リーダーを起動中...';
-    const frame = document.getElementById('reader-frame');
-    frame.src = 'reader/reader.html';
-    frame.onload = () => {
-      frame.contentWindow.postMessage({
-        type: 'INIT_DATA',
-        paragraphs: translatedParagraphs,
-        novelTitle, prevUrl, nextUrl, tocUrl,
-        settings: {
-          speed: document.getElementById('default-speed').value,
-          ttsVoice: document.getElementById('tts-voice').value,
-        }
-      }, '*');
-    };
-    msgEl.style.display = 'none';
-
-  } catch (err) {
-    console.error(err);
-    msgEl.style.color = '#c5221f';
-    msgEl.textContent = err.message;
-    document.getElementById('home-screen').style.display = 'block';
-    document.getElementById('reader-screen').style.display = 'none';
-  }
-}
 
 // ── reader.js からの WebExtension API モック通信 ──
 function handleReaderMessages(e) {
@@ -429,7 +362,7 @@ async function showToc(url) {
     ));
 
     if (links.length === 0) {
-      alert('\u76ee\u6b21\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3067\u3057\u305f\u3002');
+      showToast('\u76ee\u6b21\u304c\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3067\u3057\u305f\u3002', true);
       return;
     }
 
@@ -464,7 +397,7 @@ async function showToc(url) {
       list.appendChild(btn);
     });
   } catch (err) {
-    alert('\u76ee\u6b21\u306e\u8aad\u307f\u8fbc\u307f\u306b\u5931\u6557\u3057\u307e\u3057\u305f: ' + err.message);
+    showToast('\u76ee\u6b21\u306e\u8aad\u307f\u8fbc\u307f\u306b\u5931\u6557\u3057\u307e\u3057\u305f: ' + err.message, true);
   }
 }
 
@@ -476,11 +409,21 @@ async function searchNarou(keyword) {
     let data;
     try { data = JSON.parse(res.data); } catch { data = null; }
     if (!data || data.length < 2) {
-      alert('\u691c\u7d22\u7d50\u679c\u304c\u3042\u308a\u307e\u305b\u3093\u3067\u3057\u305f\u3002');
+      showToast('\u691c\u7d22\u7d50\u679c\u304c\u3042\u308a\u307e\u305b\u3093\u3067\u3057\u305f\u3002', true);
       return;
     }
 
-    const results = data.slice(1); // \u6700\u521d\u306f\u30ab\u30a6\u30f3\u30c8\u60c5\u5831
+    const stateFilter = document.getElementById('filter-state')?.value || 'all';
+    const minLen = Number(document.getElementById('filter-minlen')?.value || 0);
+    const results = data.slice(1).filter(novel => {
+      const okState = stateFilter === 'all' || (stateFilter === 'serial' ? novel.end === 0 : novel.end === 1);
+      const okLen = Number(novel.length || 0) >= minLen;
+      return okState && okLen;
+    });
+    if (results.length === 0) {
+      showToast('条件に一致する検索結果がありません。', true);
+      return;
+    }
     const overlay = document.createElement('div');
     overlay.id = 'search-overlay';
     overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:#fff;overflow-y:auto;padding:16px;font-family:-apple-system,sans-serif;';
@@ -512,7 +455,7 @@ async function searchNarou(keyword) {
       list.appendChild(card);
     });
   } catch (err) {
-    alert('\u691c\u7d22\u306b\u5931\u6557\u3057\u307e\u3057\u305f: ' + err.message);
+    showToast('\u691c\u7d22\u306b\u5931\u6557\u3057\u307e\u3057\u305f: ' + err.message, true);
   }
 }
 
@@ -616,4 +559,34 @@ function testApi() {
     msgDiv.style.color = '#c5221f';
     msgDiv.textContent = 'エラー: ' + err.message;
   });
+}
+
+
+function exportSettings() {
+  chrome.storage.local.get(STORAGE_KEYS, data => {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `narou-settings-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  });
+}
+
+function importSettings(e) {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(String(reader.result || '{}'));
+      chrome.storage.local.set(data, () => {
+        const msg = document.getElementById('saved-msg');
+        msg.textContent = '設定をインポートしました ✓';
+        msg.style.display = 'block';
+        setTimeout(() => { msg.style.display = 'none'; msg.textContent = '保存しました ✓'; }, 1800);
+      });
+    } catch (_) {}
+  };
+  reader.readAsText(file);
 }
